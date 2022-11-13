@@ -205,6 +205,10 @@
             chatLog.push(msg);
             const index = players.findIndex(it => it.id === msg.id);
             if (index > -1) {
+                if (players[index].lastChat) {
+                    clearTimeout(players[index].lastChat.cb);
+                }
+
                 players[index].lastChat = msg;
                 setTimeout(() => {
                     players[index].lastChat = null;
@@ -252,10 +256,18 @@
                 socket.emit("chat", text);
                 const msg = { id: player.id, text: text };
                 chatLog.push(msg);
-                player.lastChat = msg;
-                setTimeout(() => {
-                    player.lastChat = null;
-                }, 5000);
+
+                if (player.lastChat) {
+                    clearTimeout(player.lastChat.cb);
+                }
+
+                player.lastChat = {
+                    id: msg.id,
+                    text: msg.text,
+                    cb: setTimeout(() => {
+                        player.lastChat = null;
+                    }, 5000)
+                };
                 chatBar.value = "";
             }
         });

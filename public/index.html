@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple web game</title>
+</head>
+
+<body>
+    <canvas id="canvas" width="800" height="600"></canvas>
+    <input type="text" id="message" />
+</body>
+
+<style>
+    canvas {
+        border: 1px solid black;
+    }
+
+    #message {
+        position: absolute;
+        background-color:rgba(0, 0, 0, 0);
+        border: 1px solid black;
+        outline:none;
+        width: 796px;
+        left: 8px;
+        top: 611px;
+    }
+</style>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+    window.addEventListener("DOMContentLoaded", () => {
+        const canvas = document.getElementById("canvas");
+        const context = canvas.getContext("2d");
+        const input = { 
+            left: false,
+            right: false,
+            up: false,
+            down: false
+        };
+        const players = new Array();
+        const player = {
+            id: -1,
+            x: 0,
+            y: 0,
+            lastChat: null
+        };
+        const speed = 2;
+        const lastpos = { x: 0, y: 0 };
+        const chatLog = [];
+
+        setInterval(() => {
+            if (player.x !== lastpos.x || player.y !== lastpos.y) {
+                socket.emit("move", player);
+                lastpos.x = player.x;
+                lastpos.y = player.y;
+            }
+        }, 200);
+
+        window.addEventListener("keydown", (ev) => {
+            switch (ev.key) {
+                case "ArrowLeft":
+                case "Left":
+                    input.left = true;
+                    break;
+                case "ArrowRight":
+                case "Right":
+                    input.right = true;
+                    break;
+                case "ArrowUp":
+                case "Up":
+                    input.up = true;
+                    break;
+                case "ArrowDown":
+                case "Down":
+                    input.down = true;
+                    break;
+            }
+        });
+
+        window.addEventListener("keyup", (ev) => {
+            switch (ev.key) {
+                case "ArrowLeft":
+                case "Left":
+                    input.left = false;
+                    break;
+                case "ArrowRight":
+                case "Right":
+                    input.right = false;
+                    break;
+                case "ArrowUp":
+                case "Up":
+                    input.up = false;
+                    break;
+                case "ArrowDown":
+                case "Down":
+                    input.down = false;
+                    break;
+            }
+        });
+
+        function draw() {
+            context.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawPlayer(player, 'red');
+            players.forEach((player) => {
+                drawPlayer(player, 'green');
+
+                if (player.lastChat) {
+                    drawChatBalloon(player.lastChat.text, player.x, player.y);
+                }
+            });
+
+            if (player.lastChat) {
+                drawChatBalloon(player.lastChat.text, player.x, player.y);
+            }
+
+            // chat box
+            const chatboxHeight = 480;
+            context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            context.fillRect(0, chatboxHeight, canvas.width, canvas.height - chatboxHeight);
+            for (let i = 0; i <= 7; i++) {
+                const index = chatLog.length - 1 - i;
+                if (index >= 0) {
+                    const chat = chatLog[index];
+                    context.fillStyle = 'white';
+                    context.font = "12px Arial";
+                    context.fillText(`${chat.id}: ${chat.text}`, 5, canvas.height - 5 - (14 * i));
+                }
+            }
+
+            update();
+
+            requestAnimationFrame(draw);
+        }
+
+        function drawChatBalloon(text, posX, posY) {
+            const fontSize = 12;
+            const lineHeight = 3;
+            context.font = `${fontSize}px Arial`;
+
+            const lines = text.match(/.{1,14}/g);
+            var maxWidth = lines.reduce((prev, curr) => {
+                const prevWidth = context.measureText(prev).width; 
+                const currWidth = context.measureText(curr).width;
+                return prevWidth > currWidth ? prevWidth : currWidth;
+            }, 0);
+
+            const centerX = posX + 20;
+            const centerY = posY - 5;
+            let x = centerX - (maxWidth / 2);
+            let y = centerY;
+
+            context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            const height = lines.length * (fontSize + lineHeight);
+            context.fillRect(x - 5, y - height, maxWidth + 10, height + 5);
+
+            context.fillStyle = 'white';
+            for (let i = lines.length - 1; i >= 0; i--) {
+                context.fillText(lines[i], x, y);
+                y -= fontSize + lineHeight;
+            }
+        }
+
+        function update() {
+            if (input.left) {
+                player.x -= speed;
+            }
+            
+            if (input.right) {
+                player.x += speed;
+            }
+
+            if (input.up) {
+                player.y -= speed;
+            }
+
+            if (input.down) {
+                player.y += speed;
+            }
+        }
+
+        function drawPlayer(player, color) {
+            context.fillStyle = color;
+            context.font = "12px Arial";
+            context.fillText(player.id, player.x - 30, player.y + 85);
+            context.fillRect(player.x, player.y, 40, 70);
+        }
+
+        const socket = io("http://localhost:8000");
+
+        socket.on('ping', (msg) => {
+            player.id = msg.id;
+            player.x = msg.x;
+            player.y = msg.y;
+            draw();
+        });
+
+        socket.on('userlist', (msg) => {
+            players.push(...msg);
+        });
+
+        socket.on('chat', (msg) => {
+            chatLog.push(msg);
+            const index = players.findIndex(it => it.id === msg.id);
+            if (index > -1) {
+                players[index].lastChat = msg;
+                setTimeout(() => {
+                    players[index].lastChat = null;
+                }, 5000);
+            }
+        });
+
+        socket.on('move', (msg) => {
+            const index = players.findIndex(it => it.id === msg.id);
+            if (index > -1) {
+                players[index].x = msg.x;
+                players[index].y = msg.y;
+            }
+        });
+
+        socket.on('welcome', (msg) => {
+            players.push({ ...msg, lastChat: null });
+        });
+
+        socket.on('bye', (msg) => {
+            const index = players.findIndex(it => it.id === msg);
+            if (index > -1) {
+                players.splice(index, 1);
+            }
+        });
+
+        const chatBar = document.getElementById("message");
+
+        chatBar.addEventListener("keydown", (e) => {
+            if (e.isComposing || e.keyCode === 229) {
+                return;
+            }
+
+            if(e.key === 'Enter') {
+                let text = e.target.value;
+
+                if (text === "") {
+                    return;
+                }
+
+                if (text.length >= 50) {
+                    text = text.substring(0, 50);
+                }
+
+                socket.emit("chat", text);
+                const msg = { id: player.id, text: text };
+                chatLog.push(msg);
+                player.lastChat = msg;
+                setTimeout(() => {
+                    player.lastChat = null;
+                }, 5000);
+                chatBar.value = "";
+            }
+        });
+    });
+</script>
+
+</html>

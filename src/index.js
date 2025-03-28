@@ -7,7 +7,7 @@ const io = new Server(server);
 
 app.use(express.static("public"));
 
-const users = new Array();
+const players = new Map();
 
 // min and max included 
 function randomRange(min, max) { 
@@ -15,35 +15,38 @@ function randomRange(min, max) {
 }
 
 io.on('connection', (socket) => {
-    const newUser = { id: socket.id, x: randomRange(0, 700), y: randomRange(0, 500) };
-    socket.emit('ping', newUser);
-    socket.emit('userlist', users);
-    socket.broadcast.emit('welcome', newUser);
-    users.push(newUser);
+    const newPlayer = { id: socket.id, x: randomRange(0, 700), y: randomRange(0, 500) };
+    socket.emit('ping', newPlayer);
+    socket.emit('userlist', Array.from(players, (_, v) => v));
+    socket.broadcast.emit('welcome', newPlayer);
+    players.set(socket.id, newPlayer);
 
-    console.log(`user ${socket.id} connected`);
+    console.log(`player ${socket.id} connected`);
 
     socket.on('chat', (msg) => {
+        console.log(`${socket.id}: ${msg}`);
         socket.broadcast.emit("chat", { id: socket.id, text: msg });
     });
 
     socket.on('move', (msg) => {
-        const index = users.findIndex(it => it.id === msg.id);
-        if (index > -1) {
-            users[index].x = msg.x;
-            users[index].y = msg.y;
+        const p = players.get(msg.id);
+
+        if (p) {
+            p.x = msg.x;
+            p.y = msg.y;
             socket.broadcast.emit("move", msg);
         }
     });
 
     socket.on('disconnect', () => {
-        const index = users.findIndex(it => it.id === socket.id);
-        if (index > -1) {
-            users.splice(index, 1);
+        const p = players.get(socket.id);
+
+        if (p) {
+            players.delete(p.id);
             socket.broadcast.emit('bye', socket.id);
         }
 
-        console.log(`user ${socket.id} disconnected`);
+        console.log(`player ${socket.id} disconnected`);
     });
 });
 
